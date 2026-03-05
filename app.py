@@ -14,41 +14,55 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 def index():
     return render_template('index.html')
 
+@app.route('/summary')
+def summary():
+    return render_template('summary.html')
+
 @app.route('/api/verify', methods=['POST'])
 def verify_slip():
-    if 'slip_image' not in request.files:
+    if 'slip_images' not in request.files:
         return jsonify({"error": "No file part"}), 400
     
-    file = request.files['slip_image']
-    if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
+    files = request.files.getlist('slip_images')
+    if not files or files[0].filename == '':
+        return jsonify({"error": "No selected files"}), 400
         
-    if file:
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        try:
-            preprocessed_img, _ = preprocess_image(filepath)
-            extracted_text = extract_text(preprocessed_img)
-            parsed_data = parse_slip_data(extracted_text)
+    results = []
+    
+    for file in files:
+        if file:
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
             
-            return jsonify({
-                "status": "success",
-                "data": parsed_data,
-                "raw_text": extracted_text
-            })
-        except Exception as e:
-            return jsonify({
-                "status": "error",
-                "message": str(e)
-            }), 500
-        finally:
-            if os.path.exists(filepath):
-                try:
-                    os.remove(filepath)
-                except Exception as e:
-                    pass
+            try:
+                preprocessed_img, _ = preprocess_image(filepath)
+                extracted_text = extract_text(preprocessed_img)
+                parsed_data = parse_slip_data(extracted_text)
+                
+                results.append({
+                    "filename": file.filename,
+                    "status": "success",
+                    "data": parsed_data,
+                    "raw_text": extracted_text
+                })
+            except Exception as e:
+                results.append({
+                    "filename": file.filename,
+                    "status": "error",
+                    "message": str(e)
+                })
+            finally:
+                if os.path.exists(filepath):
+                    try:
+                        os.remove(filepath)
+                    except Exception as e:
+                        pass
+
+    return jsonify({
+        "status": "success",
+        "results": results
+    })
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

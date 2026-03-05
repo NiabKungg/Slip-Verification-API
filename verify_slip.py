@@ -46,7 +46,8 @@ def parse_slip_data(text):
         "amount": None,
         "date_time": None,
         "reference_no": None,
-        "sender": None
+        "sender": None,
+        "receiver": None
     }
 
     # To handle multi-line matching, join text with spaces instead of splitting into lines first
@@ -73,6 +74,11 @@ def parse_slip_data(text):
     # Join text into a single space-separated string to avoid newline breakage issues that happen in OCR
     single_line_text = " ".join(lines)
     
+    # Determine type (Income / Expense)
+    data["type"] = "Expense" # Default
+    if re.search(r"(รับเงิน|รับโอน|เงินเข้า|ฝากเงิน)", single_line_text):
+        data["type"] = "Income"
+    
     # Extract using regex search on the concatenated text string
     match_amount = re.search(amount_pattern_primary, single_line_text, re.IGNORECASE)
     if match_amount:
@@ -97,9 +103,6 @@ def parse_slip_data(text):
             break
         # Heuristic for cases where "จาก" might be on the line (e.g. SCB) or "From" (BBL)
         if ("จาก" in line or "From" in line) and not data["sender"]:
-            # If the next word is a name, it's captured on this line. 
-            # Often the name is on the same line or next line.
-            # We'll just take this line and let UI clean it up, or if it's just "จาก", try next line.
             clean_line = line.replace("จาก", "").replace("From", "").strip()
             if len(clean_line) > 3:
                 data["sender"] = line
@@ -108,12 +111,37 @@ def parse_slip_data(text):
             break
             
         # Heuristic for KBank & Krungthai where sender name might just start with a title
-        # Allow some OCR garbage characters before the title, but ensure the title is near the start
         elif not data["sender"]:
             match_sender = re.search(r"(นาย|นาง|นางสาว|น\.ส\.|MR\.|MS\.|MRS\.|Mr\.|Ms\.|Mrs\.)\s*.*", line)
             if match_sender and line.find(match_sender.group(1)) < 10:
                 data["sender"] = match_sender.group(0).strip()
                 break
+
+    # Receiver extraction is tricky, using a heuristic similar to sender
+    receiver_keywords = ["ไปยัง", "To", "ถึง", "เข้าบัญชี", "ผู้รับเงิน", "ผู้รับ", "โอนไปที่", "ชื่อบัญชี", "รับเงิน", "รับโอน"]
+    for i, line in enumerate(lines):
+        for kw in receiver_keywords:
+            if kw in line.replace(" ", "") or kw in line:
+                # Sometimes OCR introduces spaces in keywords
+                clean_line = line.replace(kw, "").replace("To ", "").replace("To\t", "").replace("ถึง", "").replace("เข้าบัญชี", "").strip()
+                if len(clean_line) > 3:
+                     data["receiver"] = clean_line
+                elif i + 1 < len(lines):
+                     data["receiver"] = lines[i+1].strip()
+                break
+        if data["receiver"]:
+             break
+
+    # Fallback: if no keyword matched, find any name prefix that is NOT the sender
+    if not data["receiver"]:
+        for line in lines:
+            match_name = re.search(r"(นาย|นาง|นางสาว|น\.ส\.|MR\.|MS\.|MRS\.|Mr\.|Ms\.|Mrs\.|บริษัท|บมจ\.|บจก\.)\s*.*", line)
+            if match_name and line.find(match_name.group(1)) < 10:
+                name_candidate = match_name.group(0).strip()
+                if name_candidate != data.get("sender"):
+                    data["receiver"] = name_candidate
+                    break
+
     return data
 
 def main():

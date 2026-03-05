@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const resDatetime = document.getElementById('res-datetime');
     const resRef = document.getElementById('res-ref');
     const resSender = document.getElementById('res-sender');
+    const resReceiver = document.getElementById('res-receiver'); // Adding receiver
     const rawText = document.getElementById('raw-text');
     const errorMessage = document.getElementById('error-message');
 
@@ -118,7 +119,8 @@ document.addEventListener('DOMContentLoaded', () => {
         errorView.classList.add('hidden');
 
         const formData = new FormData();
-        formData.append('slip_image', currentFile);
+        // Backend handles multiple, so pass single file as array
+        formData.append('slip_images', currentFile);
 
         try {
             const response = await fetch('/api/verify', {
@@ -132,16 +134,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(result.error || result.message || 'Failed to process image');
             }
 
-            // Populate Results
-            resAmount.textContent = result.data.amount || 'N/A';
-            resDatetime.textContent = result.data.date_time || 'N/A';
-            resRef.textContent = result.data.reference_no || 'N/A';
-            resSender.textContent = result.data.sender || 'N/A';
-            rawText.textContent = result.raw_text || 'No text extracted.';
+            const res = result.results[0];
+            if (res.status === 'success') {
+                // Populate Results
+                resAmount.textContent = res.data.amount || 'N/A';
+                resDatetime.textContent = res.data.date_time || 'N/A';
+                resRef.textContent = res.data.reference_no || 'N/A';
+                resSender.textContent = res.data.sender || 'N/A';
 
-            // Show Results
-            loader.classList.add('hidden');
-            dataView.classList.remove('hidden');
+                if (resReceiver) {
+                    resReceiver.textContent = res.data.receiver || 'N/A';
+                }
+
+                if (rawText) {
+                    rawText.textContent = res.raw_text || 'No text extracted.';
+                }
+
+                loader.classList.add('hidden');
+                dataView.classList.remove('hidden');
+            } else {
+                throw new Error(res.message || 'Failed to process image');
+            }
 
         } catch (error) {
             console.error('API Error:', error);
